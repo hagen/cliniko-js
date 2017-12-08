@@ -1,0 +1,27 @@
+{
+  "name": "cliniko",
+  "version": "0.0.2",
+  "description": "Cliniko RestAPI wrapper\u001b[D\u001b[D\u001b[D\u001b[D\u001b[D\u001b[D\u001b[D\u001b[D\u001b[D\u001b[D\u001b[D A\u001b[2~P\u001b[2~O\u001b[3I wrapper\u001b[D\u001b\u001b[3~\u001b[API wrapper",
+  "main": "index.js",
+  "scripts": {
+    "test": "test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hagen/cliniko-js.git"
+  },
+  "keywords": [
+    "cliniko"
+  ],
+  "author": "Hagen Dittmer",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/hagen/cliniko-js/issues"
+  },
+  "homepage": "https://github.com/hagen/cliniko-js#readme",
+  "dependencies": {
+    "http-parser-js": "^0.4.9",
+    "promise-retry": "^1.1.1",
+    "request": "^2.83.0"
+  }
+}
