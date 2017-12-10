@@ -3,6 +3,7 @@
 // to monkey patch the http_parser for it to work, so require it
 // before request.
 process.binding('http_parser').HTTPParser = require('http-parser-js').HTTPParser
+const errorEx = require('error-ex')
 const request = require('request')
 const jitter = require('promise-retry')
 const DEFAULT_RETRY_OPTS = {
@@ -10,6 +11,7 @@ const DEFAULT_RETRY_OPTS = {
   factor: 2,
   randomize: true
 }
+const USER_AGENT_EXAMPLE = "Your Name/Company (you@email.com)"
 const CLINIKO_API_BASE = "https://api.cliniko.com/v1"
 const OPERATORS = [
   { std: '<=', mod : ':<=' },
@@ -23,24 +25,14 @@ const OPERATORS = [
   { std: '~', mod : ':~' },
   { std: '', mod : '' }
 ]
-
-function NoAPIKeyError(message) {
-  this.name = "NoAPIKeyError"
-  this.message = message
-}
-NoAPIKeyError.prototype = new Error()
-
-function NoUserAgentError(message) {
-  this.name = "NoUserAgentError"
-  this.message = message
-}
-NoUserAgentError.prototype = new Error()
-
-function TooManySearchParametersError(message) {
-  this.name = "TooManySearchParametersError"
-  this.message = message
-}
-TooManySearchParametersError.prototype = new Error()
+// Errors
+const NoAPIKeyError = errorEx("NoAPIKeyError")
+const NoUserAgentError = errorEx("NoUserAgentError",
+  { example: errorEx.line('\'Your user agent should take the form %s\'') }
+)
+const TooManySearchParametersError = errorEx("TooManySearchParametersError",
+  { message : "A GET request should have either an entity ID, or search query. Not both." }
+)
 
 /**
  * Get the Cliniko settings data
@@ -68,8 +60,12 @@ const appendId = ( uri, id ) => {
 const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries }) {
   this.retries = retries || DEFAULT_RETRY_OPTS.retries
 
-  if(!api_key) throw new NoAPIKeyError()
-  if(!user_agent) throw new NoUserAgentError()
+  if(!api_key || api_key === null || typeof api_key !== "string") throw new NoAPIKeyError()
+  if(!user_agent || user_agent === null || typeof user_agent !== "string") {
+    let error = new NoUserAgentError()
+    error.example = USER_AGENT_EXAMPLE
+    throw error
+  }
   this.api_key = api_key.trim()
   this.user_agent = user_agent.trim()
   /**

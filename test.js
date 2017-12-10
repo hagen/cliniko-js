@@ -1,7 +1,7 @@
 const Cliniko = require('./').Cliniko
 const opts = {
-  api_key: "<YOUR API KEY>",
-  user_agent: "<YOUR USER AGENT>",
+  api_key: null,
+  user_agent: null,
   retries : 3
 }
 const cliniko = new Cliniko(opts)
