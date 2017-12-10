@@ -1,7 +1,7 @@
 {
   "name": "cliniko",
-  "version": "0.0.2",
-  "description": "Cliniko RestAPI wrapper\u001b[D\u001b[D\u001b[D\u001b[D\u001b[D\u001b[D\u001b[D\u001b[D\u001b[D\u001b[D\u001b[D A\u001b[2~P\u001b[2~O\u001b[3I wrapper\u001b[D\u001b\u001b[3~\u001b[API wrapper",
+  "version": "0.0.4",
+  "description": "Cliniko RestAPI wrapper",
   "main": "index.js",
   "scripts": {
     "test": "test.js"
