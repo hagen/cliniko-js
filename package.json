@@ -24,6 +24,7 @@
     "http-parser-js": "^0.4.9",
     "lodash": "^4.17.4",
     "moment": "^2.19.4",
+    "pluralize": "^7.0.0",
     "promise-retry": "^1.1.1",
     "request": "^2.83.0"
   }

@@ -8,6 +8,7 @@ const request = require('request')
 const jitter = require('promise-retry')
 const moment = require('moment')
 const _      = require('lodash')
+const { singular } = require('pluralize')
 const DEFAULT_RETRY_OPTS = {
   retries: 2,
   factor: 2,
@@ -51,13 +52,21 @@ const HTTPStatusError = errorEx("HTTPStatusError", {
   statusCode : errorEx.append("HTTP status code: %s"),
   statusMessage : errorEx.append("(%s)")
 })
+const NestedOnlyEndpointError = errorEx("NestedOnlyEndpointError", {
+  path : errorEx.append("The path '%s' can only be called as a nested resource (i.e. behind some other resource). Go double-check the API docs.")
+})
+const NoBodySuppliedError = errorEx("NoBodySuppliedError")
+const NonIntegerIDError = errorEx("NonIntegerIDError")
+const ValidationFailedError = errorEx("ValidationFailedError", {
+  field: errorEx.append("Validation of field '%s' failed:"),
+  description: errorEx.append("%s")
+})
 /**
  * Format a query string condition
  * @param  {[type]} search [description]
  * @return {[type]}        [description]
  */
 const formatSearch = search => {
-
   // Remove any colon operators
   const mod = OPERATORS.find(op => search.includes(op.mod))
   if (mod) {
@@ -117,25 +126,12 @@ const buildPage = page => {
 const appendId = ( uri, id ) => {
   return [uri, "/", id].join("")
 }
-/**
- * Trun endpoints into functions
- * @param  {[type]} self     [description]
- * @param  {[type]} endpoint [description]
- * @return {[type]}          [description]
- */
-const functionise = (self, endpoint) => {
-  const buildFunction = (self, path, entity, filters) => {
+const factory = {
+  list: (self, path, entity, filters) => {
     return function() {
       let [opts] = arguments
       if (opts === undefined) {
         opts = {}
-      }
-      if (typeof opts === "string") {
-        opts = parseInt(opts, 10)
-      }
-      if (typeof opts === "number") {
-        let id = opts
-        return self._get({ path, id })
       }
       // Store these items in the query summary
       Object.assign(self.query_summary, opts, {
@@ -151,33 +147,176 @@ const functionise = (self, endpoint) => {
       // Begin
       return self._list({ path, entity, filters, search, per_page, page, follow })
     }
+  },
+  get: (self, path) => {
+    return function() {
+      let [id] = arguments
+      if (id === undefined) {
+        let err = new NoIdSuppliedError()
+        throw err
+      }
+      if (typeof id === "string") {
+        id = parseInt(id, 10)
+      }
+      return self._get({ path, id })
+    }
+  },
+  create: (self, path) => {
+    return function() {
+      let [body] = arguments
+      if (typeof body !== "object") {
+        let err = new NoBodySuppliedError()
+        throw err
+      }
+      // Validation of all properties
+      return self._create({ path, body })
+    }
+  },
+  delete: (self, path) => {
+    return function() {
+      let [id] = arguments
+      if (id === undefined) {
+        let err = new NoIdSuppliedError()
+        throw err
+      }
+      if (typeof id === "string") {
+        id = parseInt(id, 10)
+      }
+      return self._delete({ path, id })
+    }
+  },
+  update: (self, path) => {
+    return function() {
+      let [id, body] = arguments
+      if (id === undefined) {
+        let err = new NoIdSuppliedError()
+        throw err
+      }
+      if (typeof id === "string") {
+        id = parseInt(id, 10)
+      }
+      if (typeof body !== "object") {
+        let err = new NoBodySuppliedError()
+        throw err
+      }
+      // Validation of all properties
+      return self._update({ path, id, body })
+    }
+  },
+  archive: (self, path) => {
+    return function() {
+      let [id] = arguments
+      if (id === undefined) {
+        let err = new NoIdSuppliedError()
+        throw err
+      }
+      if (typeof id === "string") {
+        id = parseInt(id, 10)
+      }
+      return self._archive({ path, id })
+    }
+  },
+  unarchive: (self, path) => {
+    return function() {
+      let [id] = arguments
+      if (id === undefined) {
+        let err = new NoIdSuppliedError()
+        throw err
+      }
+      if (typeof id === "string") {
+        id = parseInt(id, 10)
+      }
+      return self._unarchive({ path, id })
+    }
+  },
+  cancel: (self, path) => {
+    return function() {
+      let [id] = arguments
+      if (id === undefined) {
+        let err = new NoIdSuppliedError()
+        throw err
+      }
+      if (typeof id === "string") {
+        id = parseInt(id, 10)
+      }
+      return self._cancel({ path, id })
+    }
+  },
+  unavailable: (self, path) => {
+    return function() {
+      const err = new NestedOnlyEndpointError()
+      err.path = path
+      throw err
+    }
   }
-
-
+}
+/**
+ * Trun endpoints into functions
+ * @param  {[type]} self     [description]
+ * @param  {[type]} endpoint [description]
+ * @return {[type]}          [description]
+ */
+const functionise = (self, endpoint) => {
   // For each endpoint, build out the functions it exposes
   return endpoint.methods.reduce((obj, method) => {
     // Pull out what we need
-    const { name, entity = null, path, filters = [] } = endpoint
+    const {
+      name,
+      entity = null,
+      path,
+      filters = [],
+      nested_only = false,
+      pluralise = true,
+      singularise = true
+    } = endpoint
+
     // Build function name. For nested functions (/group_appointments/:id/attendees)
     // we generate a decorator to use for clarity.
     // e.g. groupAppointments(id).getAttendees()
-    const fnName = _.camelCase(`${method} ${name}`)
-    obj[fnName] = buildFunction(self, path, entity, filters)
-    // If the endpoint doesn't have any nested paths, or this is not a GET
-    // factory call, then just return what we've created
-    if (!endpoint.nested || method !== "get")
+    if (nested_only) {
+      let fnName = _.camelCase(`${method} ${name}`)
+      obj[fnName] = factory.unavailable(self, method, path, entity, filters)
+    }
+    // For endpoints that allow singular ID access, build the function.
+    if (["get", "create", "update", "delete", "cancel", "archive", "unarchive"].includes(method)) {
+      let fnName = _.camelCase(`${method} ${singular(name)}`)
+      obj[fnName] = factory[method](self, path)
+    }
+    // If this is not a GET factory call,
+    // then just return what we've created
+    if (!["get", "list"].includes(method))
+      return obj
+    // Do we need a list get?
+    if (method === "list") {
+      let fnName = _.camelCase(`get ${name}`)
+      obj[fnName] = factory.list(self, path, entity, filters)
+    }
+    // If the endpoint doesn't have any nested paths,
+    // then just return what we've created
+    if (!endpoint.nested)
       return obj
     // If this endpoint is available as a nested resource too, then
     // we need to create the nesting functions. These will always be
-    // for a given entity ID, e.g. individualAppointments(65498765).getAttendees()
-    // Build nested resources
+    // for a given entity ID, e.g. individualAppointment(123456).getAttendees()
     Object.assign(obj, endpoint.nested.reduce((obj, nested) => {
-      const nestedFnName = _.camelCase(`${nested.name}`)
+      const nestedFnName = _.camelCase(`${singular(nested.name)}`)
       obj[nestedFnName] = function(id) {
+        if (id === undefined) {
+          let err = new NoIdSuppliedError()
+          throw err
+        }
+        if (typeof id === "string") {
+          try{
+            id = parseInt(id, 10)
+          } catch(e) {
+            throw new NonIntegerIDError()
+          }
+        }
         const nested_path = nested.path.replace(":id", id) + endpoint.path
-        this.fn = {}
-        this.fn[fnName] = buildFunction(self, nested_path, entity, filters)
-        return this.fn
+        let fnName = _.camelCase(`get ${name}`)
+        let fn = {}
+        fn[fnName] = factory.list(self, nested_path, entity, filters)
+        return fn
       }
       return obj
     }, {}))
@@ -359,23 +498,47 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries }) {
   /**
    * PUT
    */
-  this._put = function({ path, id, body }) {
+  this._update = function({ path, id, body }) {
     const method = "put"
-    return this._doRequest({ method, path, id, body })
+    const url = CLINIKO_API_BASE + appendId(path, id)
+    return this._doRequest({ method, url, body })
   }
   /**
    * POST
    */
-  this._post = function({ path, body }) {
+  this._create = function({ path, body }) {
     const method = "post"
-    return this._doRequest({ method, path, body })
+    const url = CLINIKO_API_BASE + path
+    return this._doRequest({ method, url, body })
   }
   /**
    * DELETE
    */
-  this._delete = function({ path, body }) {
+  this._delete = function({ path, id }) {
     const method = "delete"
-    return this._doRequest({ method, path, id })
+    const url = CLINIKO_API_BASE + appendId(path, id)
+    return this._doRequest({ method, url })
+  }
+  /**
+   * ARCHIVE
+   */
+  this._archive = function({ path, id }) {
+    const method = "post"
+    const url = CLINIKO_API_BASE + appendId(path, id) + "/archive"
+    return this._doRequest({ method, url })
+  }
+  this._unarchive = function({ path, id }) {
+    const method = "post"
+    const url = CLINIKO_API_BASE + appendId(path, id) + "/unarchive"
+    return this._doRequest({ method, url })
+  }
+  /**
+   * CANCEL
+   */
+  this._cancel = function({ path, id }) {
+    const method = "patch"
+    const url = CLINIKO_API_BASE + appendId(path, id) + "/cancel"
+    return this._doRequest({ method, url })
   }
   /**
    * When an event is emited
