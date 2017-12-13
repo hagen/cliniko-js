@@ -39,11 +39,18 @@ const OPERATORS = [
 // Errors
 const NoAPIKeyError = errorEx("NoAPIKeyError")
 const NoUserAgentError = errorEx("NoUserAgentError",
-  { example: errorEx.line('\'Your user agent should take the form %s\'') }
+  { example: errorEx.line('Your user agent should take the form %s') }
 )
 const TooManySearchParametersError = errorEx("TooManySearchParametersError",
   { message : "A GET request should have either an entity ID, or search query. Not both." }
 )
+const NonFilterableFieldError = errorEx("NonFilterableFieldError",
+  { query : errorEx.line("The query filter \'%s\' uses a field that is not filterable for the endpoint.") }
+)
+const HTTPStatusError = errorEx("HTTPStatusError", {
+  statusCode : errorEx.append("HTTP status code: %s"),
+  statusMessage : errorEx.append("(%s)")
+})
 /**
  * Format a query string condition
  * @param  {[type]} search [description]
@@ -69,10 +76,17 @@ const formatSearch = search => {
  * @param  {[type]} search [description]
  * @return {[type]}        [description]
  */
-const prepareSearch = search_parts => {
+const prepareSearch = (search_parts, allowed) => {
   // First argument is the string query
   const args = arguments
   const [query] = search_parts
+  const fieldInQuery = field => query.includes(field)
+  // Check that the field contain in query is allowed for the endpoint
+  if (!allowed.find(fieldInQuery)) {
+    const err = new NonFilterableFieldError()
+    err.query = query
+    throw err
+  }
   const values = Array.prototype.slice.call(search_parts, 1)
   const search = formatSearch(values.reduce((query, value) => {
     if (value instanceof Date) {
@@ -83,13 +97,11 @@ const prepareSearch = search_parts => {
   return search
 }
 /**
- * Get the Cliniko settings data
- * @param  {[type]} api_key    [description]
- * @return {[type]}            [description]
+ *
  */
-const buildSearch = search  => {
+const buildSearch = ( search, allowed )  => {
   return search.reduce((acc, search_parts) => {
-    acc.push('q[]=' + prepareSearch(search_parts))
+    acc.push('q[]=' + prepareSearch(search_parts, allowed))
     return acc
   }, []).join("&")
 }
@@ -112,10 +124,8 @@ const appendId = ( uri, id ) => {
  * @return {[type]}          [description]
  */
 const functionise = (self, endpoint) => {
-  return endpoint.methods.reduce((obj, method) => {
-    const { name, entity = null, path } = endpoint
-    let fnName = _.camelCase(`${method} ${name}`)
-    obj[fnName] = function(){
+  const buildFunction = (self, path, entity, filters) => {
+    return function() {
       let [opts] = arguments
       if (opts === undefined) {
         opts = {}
@@ -125,16 +135,52 @@ const functionise = (self, endpoint) => {
       }
       if (typeof opts === "number") {
         let id = opts
-        return this._get({ path, id })
+        return self._get({ path, id })
       }
+      // Store these items in the query summary
+      Object.assign(self.query_summary, opts, {
+        started_at: new Date()
+      })
+      // Pull out search stuff for _list()
       const {
-        search,
+        search = [],
         per_page = DEFAULT_PER_PAGE,
         page = DEFAULT_PAGE,
         follow = false
       } = opts
-      return this._list({ path, entity, search, per_page, page, follow })
-    }.bind(self)
+      // Begin
+      return self._list({ path, entity, filters, search, per_page, page, follow })
+    }
+  }
+
+
+  // For each endpoint, build out the functions it exposes
+  return endpoint.methods.reduce((obj, method) => {
+    // Pull out what we need
+    const { name, entity = null, path, filters = [] } = endpoint
+    // Build function name. For nested functions (/group_appointments/:id/attendees)
+    // we generate a decorator to use for clarity.
+    // e.g. groupAppointments(id).getAttendees()
+    const fnName = _.camelCase(`${method} ${name}`)
+    obj[fnName] = buildFunction(self, path, entity, filters)
+    // If the endpoint doesn't have any nested paths, or this is not a GET
+    // factory call, then just return what we've created
+    if (!endpoint.nested || method !== "get")
+      return obj
+    // If this endpoint is available as a nested resource too, then
+    // we need to create the nesting functions. These will always be
+    // for a given entity ID, e.g. individualAppointments(65498765).getAttendees()
+    // Build nested resources
+    Object.assign(obj, endpoint.nested.reduce((obj, nested) => {
+      const nestedFnName = _.camelCase(`${nested.name}`)
+      obj[nestedFnName] = function(id) {
+        const nested_path = nested.path.replace(":id", id) + endpoint.path
+        this.fn = {}
+        this.fn[fnName] = buildFunction(self, nested_path, entity, filters)
+        return this.fn
+      }
+      return obj
+    }, {}))
     return obj
   }, {})
 }
@@ -152,6 +198,17 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries }) {
     data: null,
     done: null,
     error: null
+  }
+  // Query summary
+  this.query_summary = {
+    search: [],
+    per_page: DEFAULT_PER_PAGE,
+    page: DEFAULT_PAGE,
+    follow: false,
+    total_records: 0,
+    started_at: null,
+    ended_at: null,
+    seconds: 0
   }
   // Our trties limits
   this.retries = retries || DEFAULT_RETRY_OPTS.retries
@@ -186,7 +243,15 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries }) {
       }
       // Run the HTTP request
       request(options, function(err, response, json) {
+        // If straight up error, reject
         if (err) return reject(err)
+        // Status codes in the 4** range.
+        if (response.statusCode >= 400 && response.statusCode < 500) {
+          const httpErr = new HTTPStatusError()
+          httpErr.statusCode = response.statusCode
+          httpErr.statusMessage = response.statusMessage
+          return reject(httpErr)
+        }
         // Resolve withe JSON response, or with an empty object
         return resolve( !json || json === null ? {} : json)
       })
@@ -218,12 +283,12 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries }) {
   /*
    * GET, but searcing
    */
-  this._list = function({ path, entity, search, per_page, page, follow }) {
+  this._list = function({ path, entity, search, per_page, page, follow, filters }) {
     const method = "get"
     let qs = [
       buildPage(page),
       buildPerPage(per_page),
-      buildSearch(search)
+      buildSearch(search, filters)
     ].join("&")
     let url = CLINIKO_API_BASE + path + ( qs.length ? "?" + qs : "")
     const onData = this.callbacks.data
@@ -262,10 +327,17 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries }) {
             if (follow && json.links.next) {
               return next(json.links.next)
             }
+            // Tie off the summary object, and return
+            const ended_at = new Date()
+            Object.assign(this.query_summary, {
+              total_records: entity ? records.length : 1,
+              ended_at,
+              seconds: moment(ended_at).diff(this.query_summary.started_at, 'seconds')
+            })
             // If we have records, then we're not using the callback, so resolve
             // the promise
             if (useOnDone) {
-              onDone({ path, search, per_page, page, follow })
+              onDone(this.query_summary)
               return resolve(null)
             }
             // If we're not using the onDone callback, return the records
@@ -280,6 +352,7 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries }) {
             return reject(err)
           }.bind(this))
       }.bind(this)
+      // Start
       return next(url)
     }.bind(this))
   }
@@ -312,6 +385,9 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries }) {
    */
   this.on = function(name, callback) {
     this.callbacks[name] = callback
+  }
+  this.summary = function() {
+    return this.query_summary
   }
   // Add in all of the functions we need
   const fns = ENDPOINTS.reduce(function(obj, endpoint) {

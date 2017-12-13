@@ -2,7 +2,7 @@
   "name": "cliniko",
   "version": "0.0.5",
   "description": "Cliniko RestAPI wrapper",
-  "main": "cliniko.js",
+  "main": "index.js",
   "scripts": {
     "test": "test.js"
   },
