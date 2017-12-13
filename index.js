@@ -121,10 +121,17 @@ const buildPage = page => {
   return ( page ? `page=${page}` : '')
 }
 /**
- * Create a path with the id
+ * Generate a path which includes the ID.
+ * In some cases, we generate a path where the ID is not supplied.
+ * Typically, that's not okay - why build a path for a single entity
+ * that doesn't have an ID - but there are scenarios for nested resources
+ * where we are generically expecting to append an ID, but no ID is available.
  */
 const appendId = ( uri, id ) => {
-  return [uri, "/", id].join("")
+  // Handle the case where the ID isn't supplied (no '/' required.)
+  if (id)
+    return [uri, "/", id].join("")
+  return uri
 }
 const factory = {
   list: (self, path, entity, filters) => {
@@ -148,10 +155,10 @@ const factory = {
       return self._list({ path, entity, filters, search, per_page, page, follow })
     }
   },
-  get: (self, path) => {
+  get: (self, path, { no_id }) => {
     return function() {
       let [id] = arguments
-      if (id === undefined) {
+      if (id === undefined && !no_id) {
         let err = new NoIdSuppliedError()
         throw err
       }
@@ -266,8 +273,7 @@ const functionise = (self, endpoint) => {
       path,
       filters = [],
       nested_only = false,
-      pluralise = true,
-      singularise = true
+      no_id = false
     } = endpoint
 
     // Build function name. For nested functions (/group_appointments/:id/attendees)
@@ -280,7 +286,13 @@ const functionise = (self, endpoint) => {
     // For endpoints that allow singular ID access, build the function.
     if (["get", "create", "update", "delete", "cancel", "archive", "unarchive"].includes(method)) {
       let fnName = _.camelCase(`${method} ${singular(name)}`)
-      obj[fnName] = factory[method](self, path)
+      // When building the function, at least for GET, there are endpoints that
+      // need a singular get (e.g. getReferralSource) whithout the need of an ID.
+      // Case in point is patients. A patient has one referral source and only one.
+      // patient(123456).getReferralSource()
+      // There's no need for an ID in getReferralSource() as this is a unique resource
+      // against the patient.
+      obj[fnName] = factory[method](self, path, { no_id })
     }
     // If this is not a GET factory call,
     // then just return what we've created
@@ -440,28 +452,31 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries }) {
       // If this enpoint has an entity name for its search results,
       // then we need to collect results into an array.
       // Otherwise, just return an object
-      let records = entity ? [] : {}
+      let records = []
+      let total_records = 0
+      let pages = 1
       const next = function(url) {
         this._doRequest({ method, url })
           .then(function(json){
-            // If we have an entity name, then the JSON results are an
-            // property array, e.g.
+            // Results are returned to us. For list operations,
+            // the results json is an object, with an array inside.
+            // This array sits at the property with the entity name, e.g.
             // { patients: [ { ... }, { ... } ] }
-            // If not, then the results are just an object
-            // { ... }
             // If there's an on data callback, send the records there
             if (useOnData) {
               // if there's an entity type for the endpoint,
               // an array of records will be returned
               // sitting at the entity property in the object
-              onData(entity ? json[entity] : json)
-            }
-            // If we have an entity name, then our search results are an
-            // array behind a property
-            if (entity) {
-              // Otherwise, add them to a big array
+              onData(json[entity])
+            } else {
+              // We're not using onData, so collect all records.
+              // These will be returned with the promise is resolved.
               records.splice(records.length, 0, ...json[entity])
             }
+            // Keep a running total, as this will be emitted in the onDone
+            // event
+            total_records += json[entity].length
+            pages++
             // Are there more records? and are we following on?
             if (follow && json.links.next) {
               return next(json.links.next)
@@ -469,7 +484,8 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries }) {
             // Tie off the summary object, and return
             const ended_at = new Date()
             Object.assign(this.query_summary, {
-              total_records: entity ? records.length : 1,
+              pages,
+              total_records,
               ended_at,
               seconds: moment(ended_at).diff(this.query_summary.started_at, 'seconds')
             })
@@ -481,7 +497,7 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries }) {
             }
             // If we're not using the onDone callback, return the records
             // either as a combined array, or the JSON object
-            return resolve(entity ? records : json)
+            return resolve(records)
           }.bind(this))
           .catch(function(err) {
             if (useOnError) {
@@ -527,6 +543,9 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries }) {
     const url = CLINIKO_API_BASE + appendId(path, id) + "/archive"
     return this._doRequest({ method, url })
   }
+  /**
+   * UNARCHIVE
+   */
   this._unarchive = function({ path, id }) {
     const method = "post"
     const url = CLINIKO_API_BASE + appendId(path, id) + "/unarchive"
