@@ -14,6 +14,7 @@ const DEFAULT_RETRY_OPTS = {
   factor: 2,
   randomize: true
 }
+const Formatter = require('./lib/formatter').Formatter
 const ENDPOINTS = require('./lib/endpoints')
 const USER_AGENT_EXAMPLE = "Your Name/Company (you@email.com)"
 const DEFAULT_PAGE = 1
@@ -81,6 +82,23 @@ const formatSearch = search => {
   return formatted
 }
 /**
+ * Turns links in records to Id values
+ * @param  {[type]} records [description]
+ * @param  {[type]} fields  [description]
+ * @return {[type]}         [description]
+ */
+const delink = (records, link_fields) => {
+  // Init a new Helper. Given the fields of the endpoint, this is going
+  // to do much of the preparation work for us.
+  const formatter = new Formatter(link_fields)
+  // Formatter interface function
+  const format = record => formatter.delink(record)
+  // Our scope array for all new records
+  if (_.isArray(records))
+    return records.map(format)
+  return [records].map(format)[0]
+}
+/**
  * Format a query string condition
  * @param  {[type]} search [description]
  * @return {[type]}        [description]
@@ -134,7 +152,7 @@ const appendId = ( uri, id ) => {
   return uri
 }
 const factory = {
-  list: (self, path, entity, filters) => {
+  list: (self, path, entity, filters, delink) => {
     return function() {
       let [opts] = arguments
       if (opts === undefined) {
@@ -152,10 +170,10 @@ const factory = {
         follow = false
       } = opts
       // Begin
-      return self._list({ path, entity, filters, search, per_page, page, follow })
+      return self._list({ path, entity, filters, search, per_page, page, follow, delink })
     }
   },
-  get: (self, path, { no_id }) => {
+  get: (self, path, delink, { no_id }) => {
     return function() {
       let [id] = arguments
       if (id === undefined && !no_id) {
@@ -165,10 +183,10 @@ const factory = {
       if (typeof id === "string") {
         id = parseInt(id, 10)
       }
-      return self._get({ path, id })
+      return self._get({ path, id, delink })
     }
   },
-  create: (self, path) => {
+  create: (self, path, delink) => {
     return function() {
       let [body] = arguments
       if (typeof body !== "object") {
@@ -176,7 +194,7 @@ const factory = {
         throw err
       }
       // Validation of all properties
-      return self._create({ path, body })
+      return self._create({ path, body, delink })
     }
   },
   delete: (self, path) => {
@@ -192,7 +210,7 @@ const factory = {
       return self._delete({ path, id })
     }
   },
-  update: (self, path) => {
+  update: (self, path, delink) => {
     return function() {
       let [id, body] = arguments
       if (id === undefined) {
@@ -207,10 +225,10 @@ const factory = {
         throw err
       }
       // Validation of all properties
-      return self._update({ path, id, body })
+      return self._update({ path, id, body, delink })
     }
   },
-  archive: (self, path) => {
+  archive: (self, path, delink) => {
     return function() {
       let [id] = arguments
       if (id === undefined) {
@@ -220,10 +238,10 @@ const factory = {
       if (typeof id === "string") {
         id = parseInt(id, 10)
       }
-      return self._archive({ path, id })
+      return self._archive({ path, id, delink })
     }
   },
-  unarchive: (self, path) => {
+  unarchive: (self, path, delink) => {
     return function() {
       let [id] = arguments
       if (id === undefined) {
@@ -233,10 +251,10 @@ const factory = {
       if (typeof id === "string") {
         id = parseInt(id, 10)
       }
-      return self._unarchive({ path, id })
+      return self._unarchive({ path, id, delink })
     }
   },
-  cancel: (self, path) => {
+  cancel: (self, path, delink) => {
     return function() {
       let [id] = arguments
       if (id === undefined) {
@@ -246,7 +264,7 @@ const factory = {
       if (typeof id === "string") {
         id = parseInt(id, 10)
       }
-      return self._cancel({ path, id })
+      return self._cancel({ path, id, delink })
     }
   },
   unavailable: (self, path) => {
@@ -273,15 +291,20 @@ const functionise = (self, endpoint) => {
       path,
       filters = [],
       nested_only = false,
-      no_id = false
+      no_id = false,
+      links = []
     } = endpoint
 
+    // Delink function factory
+    const delinkFn = (records, should) => {
+      return ( should ? delink(records, links) : records )
+    }
     // Build function name. For nested functions (/group_appointments/:id/attendees)
     // we generate a decorator to use for clarity.
     // e.g. groupAppointments(id).getAttendees()
     if (nested_only) {
       let fnName = _.camelCase(`${method} ${name}`)
-      obj[fnName] = factory.unavailable(self, method, path, entity, filters)
+      obj[fnName] = factory.unavailable(self, method, path)
     }
     // For endpoints that allow singular ID access, build the function.
     if (["get", "create", "update", "delete", "cancel", "archive", "unarchive"].includes(method)) {
@@ -292,7 +315,7 @@ const functionise = (self, endpoint) => {
       // patient(123456).getReferralSource()
       // There's no need for an ID in getReferralSource() as this is a unique resource
       // against the patient.
-      obj[fnName] = factory[method](self, path, { no_id })
+      obj[fnName] = factory[method](self, path, delinkFn, { no_id })
     }
     // If this is not a GET factory call,
     // then just return what we've created
@@ -301,7 +324,7 @@ const functionise = (self, endpoint) => {
     // Do we need a list get?
     if (method === "list") {
       let fnName = _.camelCase(`get ${name}`)
-      obj[fnName] = factory.list(self, path, entity, filters)
+      obj[fnName] = factory.list(self, path, entity, filters, delinkFn)
     }
     // If the endpoint doesn't have any nested paths,
     // then just return what we've created
@@ -327,7 +350,7 @@ const functionise = (self, endpoint) => {
         const nested_path = nested.path.replace(":id", id) + endpoint.path
         let fnName = _.camelCase(`get ${name}`)
         let fn = {}
-        fn[fnName] = factory.list(self, nested_path, entity, filters)
+        fn[fnName] = factory.list(self, nested_path, entity, filters, delinkFn)
         return fn
       }
       return obj
@@ -343,7 +366,7 @@ const functionise = (self, endpoint) => {
  * @param  {[type]} retries    [description]
  * @return {[type]}            [description]
  */
-const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries }) {
+const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries = DEFAULT_RETRY_OPTS.retries, delinkify = false }) {
   // Set up the object for event callbacks
   this.callbacks = {
     data: null,
@@ -361,8 +384,10 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries }) {
     ended_at: null,
     seconds: 0
   }
-  // Our trties limits
-  this.retries = retries || DEFAULT_RETRY_OPTS.retries
+  // Convert links to ids?
+  this.delinkify = delinkify
+  // Our retries limits
+  this.retries = retries
   // if an API key or user agent isn't supplied, don't continue. These are mandatory.
   if(!api_key || api_key === null || typeof api_key !== "string") throw new NoAPIKeyError()
   if(!user_agent || user_agent === null || typeof user_agent !== "string") {
@@ -426,15 +451,31 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries }) {
   /**
    * GET
    */
-  this._get = function({ path, id }) {
+  this._get = function({ path, id, delink }) { return new Promise(function(resolve, reject) {
     const method = "get"
     const url = CLINIKO_API_BASE + appendId(path, id) + "?"
     return this._doRequest({ method, url })
-  }
+      .then(function(json){
+        if (this._useOnData()) {
+          this.callbacks.data(delink(json, this.delinkify))
+          return resolve(null)
+        }
+        // We're not using onData, so collect all records.
+        // These will be returned with the promise is resolved.
+        return resolve(delink(json, this.delinkify))
+      }.bind(this))
+      .catch(function(err) {
+        if (this._useOnError()) {
+          this.callbacks.error(err)
+          return resolve(null)
+        }
+        return reject(err)
+      }.bind(this))
+  }.bind(this))}
   /*
    * GET, but searcing
    */
-  this._list = function({ path, entity, search, per_page, page, follow, filters }) {
+  this._list = function({ path, entity, search, per_page, page, follow, filters, delink }) { return new Promise(function(resolve, reject) {
     const method = "get"
     let qs = [
       buildPage(page),
@@ -442,123 +483,183 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries }) {
       buildSearch(search, filters)
     ].join("&")
     let url = CLINIKO_API_BASE + path + ( qs.length ? "?" + qs : "")
-    const onData = this.callbacks.data
-    const useOnData = typeof onData === "function"
-    const onError = this.callbacks.error
-    const useOnError = typeof onError === "function"
-    const onDone = this.callbacks.done
-    const useOnDone = typeof onDone === "function"
-    return new Promise(function(resolve, reject) {
-      // If this enpoint has an entity name for its search results,
-      // then we need to collect results into an array.
-      // Otherwise, just return an object
-      let records = []
-      let total_records = 0
-      let pages = 1
-      const next = function(url) {
-        this._doRequest({ method, url })
-          .then(function(json){
-            // Results are returned to us. For list operations,
-            // the results json is an object, with an array inside.
-            // This array sits at the property with the entity name, e.g.
-            // { patients: [ { ... }, { ... } ] }
-            // If there's an on data callback, send the records there
-            if (useOnData) {
-              // if there's an entity type for the endpoint,
-              // an array of records will be returned
-              // sitting at the entity property in the object
-              onData(json[entity])
-            } else {
-              // We're not using onData, so collect all records.
-              // These will be returned with the promise is resolved.
-              records.splice(records.length, 0, ...json[entity])
-            }
-            // Keep a running total, as this will be emitted in the onDone
-            // event
-            total_records += json[entity].length
-            pages++
-            // Are there more records? and are we following on?
-            if (follow && json.links.next) {
-              return next(json.links.next)
-            }
-            // Tie off the summary object, and return
-            const ended_at = new Date()
-            Object.assign(this.query_summary, {
-              pages,
-              total_records,
-              ended_at,
-              seconds: moment(ended_at).diff(this.query_summary.started_at, 'seconds')
-            })
-            // If we have records, then we're not using the callback, so resolve
-            // the promise
-            if (useOnDone) {
-              onDone(this.query_summary)
-              return resolve(null)
-            }
-            // If we're not using the onDone callback, return the records
-            // either as a combined array, or the JSON object
-            return resolve(records)
-          }.bind(this))
-          .catch(function(err) {
-            if (useOnError) {
-              onError(err)
-              return resolve(null)
-            }
-            return reject(err)
-          }.bind(this))
-      }.bind(this)
-      // Start
-      return next(url)
-    }.bind(this))
-  }
+    // If this enpoint has an entity name for its search results,
+    // then we need to collect results into an array.
+    // Otherwise, just return an object
+    let records = []
+    let total_records = 0
+    let pages = 0
+    const next = function(url) {
+      this._doRequest({ method, url })
+        .then(function(json){
+          // Keep a running total, as this will be emitted in the onDone
+          // event
+          total_records += json[entity].length
+          pages++
+          // Results are returned to us. For list operations,
+          // the results json is an object, with an array inside.
+          // This array sits at the property with the entity name, e.g.
+          // { patients: [ { ... }, { ... } ] }
+          // If there's an on data callback, send the records there
+          if (this._useOnData()) {
+            // if there's an entity type for the endpoint,
+            // an array of records will be returned
+            // sitting at the entity property in the object
+            this.callbacks.data(delink(json[entity], this.delinkify))
+          } else {
+            // We're not using onData, so collect all records.
+            // These will be returned with the promise is resolved.
+            records.splice(records.length, 0, ...delink(json[entity], this.delinkify))
+          }
+          // Are there more records? and are we following on?
+          if (follow && json.links.next) {
+            return next(json.links.next)
+          }
+          // Tie off the summary object, and return
+          const ended_at = new Date()
+          Object.assign(this.query_summary, {
+            pages,
+            total_records,
+            ended_at,
+            seconds: moment(ended_at).diff(this.query_summary.started_at, 'seconds')
+          })
+          // If we have records, then we're not using the callback, so resolve
+          // the promise
+          if (this._useOnDone()) {
+            this.callbacks.done(this.query_summary)
+            return resolve(null)
+          }
+          // If we're not using the onDone callback, return the records
+          // either as a combined array, or the JSON object
+          return resolve(records)
+        }.bind(this))
+        .catch(function(err) {
+          if (this._useOnError()) {
+            this.callbacks.error(err)
+            return resolve(null)
+          }
+          return reject(err)
+        }.bind(this))
+    }.bind(this)
+    // Start
+    return next(url)
+  }.bind(this))}
   /**
    * PUT
    */
-  this._update = function({ path, id, body }) {
+  this._update = function({ path, id, body, delink }) { return new Promise(function(resolve, reject) {
     const method = "put"
     const url = CLINIKO_API_BASE + appendId(path, id)
     return this._doRequest({ method, url, body })
-  }
+      .then(function(json){
+        if (this._useOnData()) {
+          this.callbacks.data(delink(json, this.delinkify))
+          return resolve(null)
+        }
+        // We're not using onData, so collect all records.
+        // These will be returned with the promise is resolved.
+        return resolve(delink(json, this.delinkify))
+      }.bind(this))
+      .catch(function(err) {
+        if (this._useOnError()) {
+          this.callbacks.error(err)
+          return resolve(null)
+        }
+        return reject(err)
+      }.bind(this))
+  }.bind(this))}
   /**
    * POST
    */
-  this._create = function({ path, body }) {
+  this._create = function({ path, body, delink }) { return new Promise(function(resolve, reject) {
     const method = "post"
     const url = CLINIKO_API_BASE + path
     return this._doRequest({ method, url, body })
-  }
+  }.bind(this))}
   /**
    * DELETE
    */
-  this._delete = function({ path, id }) {
+  this._delete = function({ path, id }) { return new Promise(function(resolve, reject) {
     const method = "delete"
     const url = CLINIKO_API_BASE + appendId(path, id)
     return this._doRequest({ method, url })
-  }
+  }.bind(this))}
   /**
    * ARCHIVE
    */
-  this._archive = function({ path, id }) {
+  this._archive = function({ path, id, delink }) { return new Promise(function(resolve, reject) {
     const method = "post"
     const url = CLINIKO_API_BASE + appendId(path, id) + "/archive"
     return this._doRequest({ method, url })
-  }
+      .then(function(json){
+        if (this._useOnData()) {
+          this.callbacks.data(delink(json, this.delinkify))
+          return resolve(null)
+        }
+        // We're not using onData, so collect all records.
+        // These will be returned with the promise is resolved.
+        return resolve(delink(json, this.delinkify))
+      }.bind(this))
+      .catch(function(err) {
+        if (this._useOnError()) {
+          this.callbacks.error(err)
+          return resolve(null)
+        }
+        return reject(err)
+      }.bind(this))
+  }.bind(this))}
   /**
    * UNARCHIVE
    */
-  this._unarchive = function({ path, id }) {
+  this._unarchive = function({ path, id, delink }) { return new Promise(function(resolve, reject) {
     const method = "post"
     const url = CLINIKO_API_BASE + appendId(path, id) + "/unarchive"
     return this._doRequest({ method, url })
-  }
+      .then(function(json){
+        if (this._useOnData()) {
+          this.callbacks.data(delink(json, this.delinkify))
+          return resolve(null)
+        }
+        // We're not using onData, so collect all records.
+        // These will be returned with the promise is resolved.
+        return resolve(delink(json, this.delinkify))
+      }.bind(this))
+      .catch(function(err) {
+        if (this._useOnError()) {
+          this.callbacks.error(err)
+          return resolve(null)
+        }
+        return reject(err)
+      }.bind(this))
+  }.bind(this))}
   /**
    * CANCEL
    */
-  this._cancel = function({ path, id }) {
+  this._cancel = function({ path, id, delink }) { return new Promise(function(resolve, reject) {
     const method = "patch"
     const url = CLINIKO_API_BASE + appendId(path, id) + "/cancel"
     return this._doRequest({ method, url })
-  }
+      .then(function(json){
+        if (this._useOnData()) {
+          this.callbacks.data(delink(json, this.delinkify))
+          return resolve(null)
+        }
+        // We're not using onData, so collect all records.
+        // These will be returned with the promise is resolved.
+        return resolve(delink(json, this.delinkify))
+      }.bind(this))
+      .catch(function(err) {
+        if (this._useOnError()) {
+          this.callbacks.error(err)
+          return resolve(null)
+        }
+        return reject(err)
+      }.bind(this))
+  }.bind(this))}
+  this._useOnData = function() { return this._hasCallback("data") }
+  this._useOnDone = function() { return this._hasCallback("done") }
+  this._useOnError = function() { return this._hasCallback("error") }
+  this._hasCallback = function(name) { return typeof this.callbacks[name] === "function" }
   /**
    * When an event is emited
    * @param  {[type]}   name     [description]
