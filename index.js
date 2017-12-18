@@ -20,6 +20,7 @@ const USER_AGENT_EXAMPLE = "Your Name/Company (you@email.com)"
 const DEFAULT_PAGE = 1
 const DEFAULT_PER_PAGE = 50
 const CLINIKO_API_BASE = "https://api.cliniko.com/v1"
+const RETAIN_FIELDS = true
 /**
  * Operators are carefully ordered to ensure that search term formatting
  * doesn't trip up on repeated characters. e.g. the character > is repeated
@@ -107,13 +108,6 @@ const prepareSearch = (search_parts, allowed) => {
   // First argument is the string query
   const args = arguments
   const [query] = search_parts
-  const fieldInQuery = field => query.includes(field)
-  // Check that the field contain in query is allowed for the endpoint
-  if (!allowed.find(fieldInQuery)) {
-    const err = new NonFilterableFieldError()
-    err.query = query
-    throw err
-  }
   const values = Array.prototype.slice.call(search_parts, 1)
   const search = formatSearch(values.reduce((query, value) => {
     if (value instanceof Date) {
@@ -128,7 +122,13 @@ const prepareSearch = (search_parts, allowed) => {
  */
 const buildSearch = ( search, allowed )  => {
   return search.reduce((acc, search_parts) => {
-    acc.push('q[]=' + prepareSearch(search_parts, allowed))
+    const [query] = search_parts
+    const fieldInQuery = field => query.includes(field)
+    // Check that the field contain in query is allowed for the endpoint
+    // If not, don't add it in
+    if (allowed.find(fieldInQuery)) {
+      acc.push('q[]=' + prepareSearch(search_parts, allowed))
+    }
     return acc
   }, []).join("&")
 }
@@ -267,7 +267,7 @@ const factory = {
       return self._cancel({ path, id, delink })
     }
   },
-  unavailable: (self, path) => {
+  unavailable: (self, path, fnName) => {
     return function() {
       const err = new NestedOnlyEndpointError()
       err.path = path
@@ -302,12 +302,11 @@ const functionise = (self, endpoint) => {
     // Build function name. For nested functions (/group_appointments/:id/attendees)
     // we generate a decorator to use for clarity.
     // e.g. groupAppointments(id).getAttendees()
-    if (nested_only) {
-      let fnName = _.camelCase(`${method} ${name}`)
-      obj[fnName] = factory.unavailable(self, method, path)
-    }
-    // For endpoints that allow singular ID access, build the function.
-    if (["get", "create", "update", "delete", "cancel", "archive", "unarchive"].includes(method)) {
+    if (method === "get" && nested_only) {
+      let fnName = _.camelCase(`${method} ${singular(name)}`)
+      obj[fnName] = factory.unavailable(self, path)
+      // For endpoints that allow singular ID access, build the function.
+    } else if (["get", "create", "update", "delete", "cancel", "archive", "unarchive"].includes(method)) {
       let fnName = _.camelCase(`${method} ${singular(name)}`)
       // When building the function, at least for GET, there are endpoints that
       // need a singular get (e.g. getReferralSource) whithout the need of an ID.
@@ -489,7 +488,8 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries = DEFA
     let records = []
     let total_records = 0
     let pages = 0
-    const next = function(url) {
+    let fields = []
+    const next = function(url, save_fields) {
       this._doRequest({ method, url })
         .then(function(json){
           // Keep a running total, as this will be emitted in the onDone
@@ -501,15 +501,21 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries = DEFA
           // This array sits at the property with the entity name, e.g.
           // { patients: [ { ... }, { ... } ] }
           // If there's an on data callback, send the records there
+          const delinked = delink(json[entity], this.delinkify)
           if (this._useOnData()) {
             // if there's an entity type for the endpoint,
             // an array of records will be returned
             // sitting at the entity property in the object
-            this.callbacks.data(delink(json[entity], this.delinkify))
+            this.callbacks.data(delinked)
           } else {
             // We're not using onData, so collect all records.
             // These will be returned with the promise is resolved.
-            records.splice(records.length, 0, ...delink(json[entity], this.delinkify))
+            records.splice(records.length, 0, ...delinked)
+          }
+          // Do we need to save the JSON fields too?
+          if (save_fields && delinked.length) {
+            let rec = _.sample(delinked)
+            fields = Object.keys(rec)
           }
           // Are there more records? and are we following on?
           if (follow && json.links.next) {
@@ -518,6 +524,7 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries = DEFA
           // Tie off the summary object, and return
           const ended_at = new Date()
           Object.assign(this.query_summary, {
+            fields,
             pages,
             total_records,
             ended_at,
@@ -542,7 +549,7 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries = DEFA
         }.bind(this))
     }.bind(this)
     // Start
-    return next(url)
+    return next(url, RETAIN_FIELDS)
   }.bind(this))}
   /**
    * PUT
