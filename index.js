@@ -294,7 +294,6 @@ const functionise = (self, endpoint) => {
       no_id = false,
       links = []
     } = endpoint
-
     // Delink function factory
     const delinkFn = (records, should) => {
       return ( should ? delink(records, links) : records )
@@ -305,6 +304,15 @@ const functionise = (self, endpoint) => {
     if (method === "get" && nested_only) {
       let fnName = _.camelCase(`${method} ${singular(name)}`)
       obj[fnName] = factory.unavailable(self, path)
+    } else if (method === "get" && no_id) {
+      let fnName = _.camelCase(`${method} ${name}`)
+      // When building the function, at least for GET, there are endpoints that
+      // need a singular get (e.g. getReferralSource) whithout the need of an ID.
+      // Case in point is patients. A patient has one referral source and only one.
+      // patient(123456).getReferralSource()
+      // There's no need for an ID in getReferralSource() as this is a unique resource
+      // against the patient.
+      obj[fnName] = factory[method](self, path, delinkFn, { no_id })
       // For endpoints that allow singular ID access, build the function.
     } else if (["get", "create", "update", "delete", "cancel", "archive", "unarchive"].includes(method)) {
       let fnName = _.camelCase(`${method} ${singular(name)}`)
