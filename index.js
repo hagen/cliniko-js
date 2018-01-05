@@ -97,7 +97,10 @@ const delink = (records, link_fields) => {
   // Our scope array for all new records
   if (_.isArray(records))
     return records.map(format)
-  return [records].map(format)[0]
+  else if (_.isObject(records))
+    return [records].map(format)[0]
+  else
+    return records
 }
 /**
  * Format a query string condition
@@ -283,7 +286,7 @@ const factory = {
  */
 const functionise = (self, endpoint) => {
   // For each endpoint, build out the functions it exposes
-  return endpoint.methods.reduce((obj, method) => {
+  return endpoint.methods.reduce((obj, method, ix, methods) => {
     // Pull out what we need
     const {
       name,
@@ -333,35 +336,37 @@ const functionise = (self, endpoint) => {
       let fnName = _.camelCase(`get ${name}`)
       obj[fnName] = factory.list(self, path, entity, filters, delinkFn)
     }
-    // If the endpoint doesn't have any nested paths,
-    // then just return what we've created
-    if (!endpoint.nested)
-      return obj
     // If this endpoint is available as a nested resource too, then
     // we need to create the nesting functions. These will always be
     // for a given entity ID, e.g. individualAppointment(123456).getAttendees()
-    Object.assign(obj, endpoint.nested.reduce((obj, nested) => {
-      const nestedFnName = _.camelCase(`${singular(nested.name)}`)
-      obj[nestedFnName] = function(id) {
-        if (id === undefined) {
-          let err = new NoIdSuppliedError()
-          throw err
-        }
-        if (typeof id === "string") {
-          try{
-            id = parseInt(id, 10)
-          } catch(e) {
-            throw new NonIntegerIDError()
+    if (endpoint.nested) {
+      Object.assign(obj, endpoint.nested.reduce((obj, nested) => {
+        const nestedFnName = _.camelCase(`${singular(nested.name)}`)
+        obj[nestedFnName] = function(id) {
+          if (id === undefined) {
+            let err = new NoIdSuppliedError()
+            throw err
           }
+          if (typeof id === "string") {
+            try{
+              id = parseInt(id, 10)
+            } catch(e) {
+              throw new NonIntegerIDError()
+            }
+          }
+          const nested_path = nested.path.replace(":id", id) + endpoint.path
+          let fnName = _.camelCase(`get ${name}`)
+          let fn = {}
+          fn[fnName] = (
+            method === "get" ?
+            factory.get(self, nested_path, delinkFn, { no_id }) :
+            factory.list(self, nested_path, entity, filters, delinkFn)
+          )
+          return fn
         }
-        const nested_path = nested.path.replace(":id", id) + endpoint.path
-        let fnName = _.camelCase(`get ${name}`)
-        let fn = {}
-        fn[fnName] = factory.list(self, nested_path, entity, filters, delinkFn)
-        return fn
-      }
-      return obj
-    }, {}))
+        return obj
+      }, {}))
+    }
     return obj
   }, {})
 }
@@ -501,7 +506,7 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries = DEFA
       this._doRequest({ method, url })
         .then(function(json){
           // Keep a running total, as this will be emitted in the onDone
-          // event
+          // event.
           total_records += json[entity].length
           pages++
           // Results are returned to us. For list operations,

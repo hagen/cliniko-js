@@ -27,5 +27,8 @@
     "pluralize": "^7.0.0",
     "promise-retry": "^1.1.1",
     "request": "^2.83.0"
+  },
+  "devDependencies": {
+    "commander": "^2.12.2"
   }
 }
