@@ -1,5 +1,5 @@
 const fields = [
-  { name : "referrers", type : "link", rename: "referrers" }
+  { name: 'referrers', type: 'link', rename: 'referrers' }
 ]
 
 module.exports = {

@@ -7,7 +7,7 @@ const errorEx = require('error-ex')
 const request = require('request')
 const jitter = require('promise-retry')
 const moment = require('moment')
-const _      = require('lodash')
+const _ = require('lodash')
 const { singular } = require('pluralize')
 const DEFAULT_RETRY_OPTS = {
   retries: 2,
@@ -16,10 +16,10 @@ const DEFAULT_RETRY_OPTS = {
 }
 const Formatter = require('./lib/formatter').Formatter
 const ENDPOINTS = require('./lib/endpoints')
-const USER_AGENT_EXAMPLE = "Your Name/Company (you@email.com)"
+const USER_AGENT_EXAMPLE = 'Your Name/Company (you@email.com)'
 const DEFAULT_PAGE = 1
 const DEFAULT_PER_PAGE = 50
-const CLINIKO_API_BASE = "https://api.cliniko.com/v1"
+const CLINIKO_API_BASE = 'https://api.cliniko.com/v1'
 const RETAIN_FIELDS = true
 /**
  * Operators are carefully ordered to ensure that search term formatting
@@ -29,40 +29,32 @@ const RETAIN_FIELDS = true
  * See 'formatSearch' for implementation.
  */
 const OPERATORS = [
-  { std: '<=', mod : ':<=' },
-  { std: '>=', mod : ':>=' },
-  { std: '~~', mod : ':~~' },
-  { std: '!=', mod : ':!=' },
-  { std: '<>', mod : ':!=' },
-  { std: '<', mod : ':<' },
-  { std: '>', mod : ':>' },
-  { std: '=', mod : ':=' },
-  { std: '~', mod : ':~' }
+  { std: '<=', mod: ':<=' },
+  { std: '>=', mod: ':>=' },
+  { std: '~~', mod: ':~~' },
+  { std: '!=', mod: ':!=' },
+  { std: '<>', mod: ':!=' },
+  { std: '<', mod: ':<' },
+  { std: '>', mod: ':>' },
+  { std: '=', mod: ':=' },
+  { std: '~', mod: ':~' }
 ]
 // Errors
-const NoAPIKeyError = errorEx("NoAPIKeyError")
-const NoUserAgentError = errorEx("NoUserAgentError",
+const NoAPIKeyError = errorEx('NoAPIKeyError')
+const NoUserAgentError = errorEx('NoUserAgentError',
   { example: errorEx.line('Your user agent should take the form %s') }
 )
-const TooManySearchParametersError = errorEx("TooManySearchParametersError",
-  { message : "A GET request should have either an entity ID, or search query. Not both." }
-)
-const NonFilterableFieldError = errorEx("NonFilterableFieldError",
-  { query : errorEx.line("The query filter \'%s\' uses a field that is not filterable for the endpoint.") }
-)
-const HTTPStatusError = errorEx("HTTPStatusError", {
-  statusCode : errorEx.append("HTTP status code: %s"),
-  statusMessage : errorEx.append("(%s)")
+const HTTPStatusError = errorEx('HTTPStatusError', {
+  statusCode: errorEx.append('HTTP status code: %s'),
+  statusMessage: errorEx.append('(%s)')
 })
-const NestedOnlyEndpointError = errorEx("NestedOnlyEndpointError", {
-  path : errorEx.append("The path '%s' can only be called as a nested resource (i.e. behind some other resource). Go double-check the API docs.")
+const NestedOnlyEndpointError = errorEx('NestedOnlyEndpointError', {
+  path: errorEx.append('The path \'%s\' can only be called as a nested resource (i.e. behind some other resource). Go double-check the API docs.')
 })
-const NoBodySuppliedError = errorEx("NoBodySuppliedError")
-const NonIntegerIDError = errorEx("NonIntegerIDError")
-const ValidationFailedError = errorEx("ValidationFailedError", {
-  field: errorEx.append("Validation of field '%s' failed:"),
-  description: errorEx.append("%s")
-})
+const NoBodySuppliedError = errorEx('NoBodySuppliedError')
+const NonIntegerIDError = errorEx('NonIntegerIDError')
+const NoIdSuppliedError = errorEx('NoIdSuppliedError')
+
 /**
  * Format a query string condition
  * @param  {[type]} search [description]
@@ -78,8 +70,8 @@ const formatSearch = search => {
   const op = OPERATORS.find(op => search.includes(op.std))
   const index = search.indexOf(op.std)
   const left = search.slice(0, index)
-  const right = search.slice(index+op.std.length)
-  const formatted = [left.trim(), op.mod, right.trim()].join("")
+  const right = search.slice(index + op.std.length)
+  const formatted = [left.trim(), op.mod, right.trim()].join('')
   return formatted
 }
 /**
@@ -95,35 +87,29 @@ const delink = (records, link_fields) => {
   // Formatter interface function
   const format = record => formatter.delink(record)
   // Our scope array for all new records
-  if (_.isArray(records))
-    return records.map(format)
-  else if (_.isObject(records))
-    return [records].map(format)[0]
-  else
-    return records
+  if (_.isArray(records)) { return records.map(format) } else if (_.isObject(records)) { return [records].map(format)[0] } else { return records }
 }
 /**
  * Format a query string condition
  * @param  {[type]} search [description]
  * @return {[type]}        [description]
  */
-const prepareSearch = (search_parts, allowed) => {
+const prepareSearch = (search_parts) => {
   // First argument is the string query
-  const args = arguments
   const [query] = search_parts
   const values = Array.prototype.slice.call(search_parts, 1)
   const search = formatSearch(values.reduce((query, value) => {
     if (value instanceof Date) {
-      return query.replace("?", moment(value).utc().format("YYYY-MM-DDTHH:mm:ss[Z]"))
+      return query.replace('?', moment(value).utc().format('YYYY-MM-DDTHH:mm:ss[Z]'))
     }
-    return query.replace("?", value)
+    return query.replace('?', value)
   }, query))
   return search
 }
 /**
  *
  */
-const buildSearch = ( search, allowed )  => {
+const buildSearch = (search, allowed) => {
   return search.reduce((acc, search_parts) => {
     const [query] = search_parts
     const fieldInQuery = field => query.includes(field)
@@ -133,13 +119,13 @@ const buildSearch = ( search, allowed )  => {
       acc.push('q[]=' + prepareSearch(search_parts, allowed))
     }
     return acc
-  }, []).join("&")
+  }, []).join('&')
 }
 const buildPerPage = per_page => {
-  return ( per_page ? `per_page=${per_page}` : '')
+  return (per_page ? `per_page=${per_page}` : '')
 }
 const buildPage = page => {
-  return ( page ? `page=${page}` : '')
+  return (page ? `page=${page}` : '')
 }
 /**
  * Generate a path which includes the ID.
@@ -148,15 +134,14 @@ const buildPage = page => {
  * that doesn't have an ID - but there are scenarios for nested resources
  * where we are generically expecting to append an ID, but no ID is available.
  */
-const appendId = ( uri, id ) => {
+const appendId = (uri, id) => {
   // Handle the case where the ID isn't supplied (no '/' required.)
-  if (id)
-    return [uri, "/", id].join("")
+  if (id) { return [uri, '/', id].join('') }
   return uri
 }
 const factory = {
   list: (self, path, entity, filters, delink) => {
-    return function() {
+    return function () {
       let [opts] = arguments
       if (opts === undefined) {
         opts = {}
@@ -177,22 +162,22 @@ const factory = {
     }
   },
   get: (self, path, delink, { no_id }) => {
-    return function() {
+    return function () {
       let [id] = arguments
       if (id === undefined && !no_id) {
         let err = new NoIdSuppliedError()
         throw err
       }
-      if (typeof id === "string") {
+      if (typeof id === 'string') {
         id = parseInt(id, 10)
       }
       return self._get({ path, id, delink })
     }
   },
   create: (self, path, delink) => {
-    return function() {
+    return function () {
       let [body] = arguments
-      if (typeof body !== "object") {
+      if (typeof body !== 'object') {
         let err = new NoBodySuppliedError()
         throw err
       }
@@ -201,29 +186,29 @@ const factory = {
     }
   },
   delete: (self, path) => {
-    return function() {
+    return function () {
       let [id] = arguments
       if (id === undefined) {
         let err = new NoIdSuppliedError()
         throw err
       }
-      if (typeof id === "string") {
+      if (typeof id === 'string') {
         id = parseInt(id, 10)
       }
       return self._delete({ path, id })
     }
   },
   update: (self, path, delink) => {
-    return function() {
+    return function () {
       let [id, body] = arguments
       if (id === undefined) {
         let err = new NoIdSuppliedError()
         throw err
       }
-      if (typeof id === "string") {
+      if (typeof id === 'string') {
         id = parseInt(id, 10)
       }
-      if (typeof body !== "object") {
+      if (typeof body !== 'object') {
         let err = new NoBodySuppliedError()
         throw err
       }
@@ -232,46 +217,46 @@ const factory = {
     }
   },
   archive: (self, path, delink) => {
-    return function() {
+    return function () {
       let [id] = arguments
       if (id === undefined) {
         let err = new NoIdSuppliedError()
         throw err
       }
-      if (typeof id === "string") {
+      if (typeof id === 'string') {
         id = parseInt(id, 10)
       }
       return self._archive({ path, id, delink })
     }
   },
   unarchive: (self, path, delink) => {
-    return function() {
+    return function () {
       let [id] = arguments
       if (id === undefined) {
         let err = new NoIdSuppliedError()
         throw err
       }
-      if (typeof id === "string") {
+      if (typeof id === 'string') {
         id = parseInt(id, 10)
       }
       return self._unarchive({ path, id, delink })
     }
   },
   cancel: (self, path, delink) => {
-    return function() {
+    return function () {
       let [id] = arguments
       if (id === undefined) {
         let err = new NoIdSuppliedError()
         throw err
       }
-      if (typeof id === "string") {
+      if (typeof id === 'string') {
         id = parseInt(id, 10)
       }
       return self._cancel({ path, id, delink })
     }
   },
-  unavailable: (self, path, fnName) => {
-    return function() {
+  unavailable: (self, path) => {
+    return function () {
       const err = new NestedOnlyEndpointError()
       err.path = path
       throw err
@@ -286,7 +271,7 @@ const factory = {
  */
 const functionise = (self, endpoint) => {
   // For each endpoint, build out the functions it exposes
-  return endpoint.methods.reduce((obj, method, ix, methods) => {
+  return endpoint.methods.reduce((obj, method) => {
     // Pull out what we need
     const {
       name,
@@ -299,15 +284,15 @@ const functionise = (self, endpoint) => {
     } = endpoint
     // Delink function factory
     const delinkFn = (records, should) => {
-      return ( should ? delink(records, links) : records )
+      return (should ? delink(records, links) : records)
     }
     // Build function name. For nested functions (/group_appointments/:id/attendees)
     // we generate a decorator to use for clarity.
     // e.g. groupAppointments(id).getAttendees()
-    if (method === "get" && nested_only) {
+    if (method === 'get' && nested_only) {
       let fnName = _.camelCase(`${method} ${singular(name)}`)
       obj[fnName] = factory.unavailable(self, path)
-    } else if (method === "get" && no_id) {
+    } else if (method === 'get' && no_id) {
       let fnName = _.camelCase(`${method} ${name}`)
       // When building the function, at least for GET, there are endpoints that
       // need a singular get (e.g. getReferralSource) whithout the need of an ID.
@@ -317,7 +302,7 @@ const functionise = (self, endpoint) => {
       // against the patient.
       obj[fnName] = factory[method](self, path, delinkFn, { no_id })
       // For endpoints that allow singular ID access, build the function.
-    } else if (["get", "create", "update", "delete", "cancel", "archive", "unarchive"].includes(method)) {
+    } else if (['get', 'create', 'update', 'delete', 'cancel', 'archive', 'unarchive'].includes(method)) {
       let fnName = _.camelCase(`${method} ${singular(name)}`)
       // When building the function, at least for GET, there are endpoints that
       // need a singular get (e.g. getReferralSource) whithout the need of an ID.
@@ -329,10 +314,9 @@ const functionise = (self, endpoint) => {
     }
     // If this is not a GET factory call,
     // then just return what we've created
-    if (!["get", "list"].includes(method))
-      return obj
+    if (!['get', 'list'].includes(method)) { return obj }
     // Do we need a list get?
-    if (method === "list") {
+    if (method === 'list') {
       let fnName = _.camelCase(`get ${name}`)
       obj[fnName] = factory.list(self, path, entity, filters, delinkFn)
     }
@@ -342,25 +326,25 @@ const functionise = (self, endpoint) => {
     if (endpoint.nested) {
       Object.assign(obj, endpoint.nested.reduce((obj, nested) => {
         const nestedFnName = _.camelCase(`${singular(nested.name)}`)
-        obj[nestedFnName] = function(id) {
+        obj[nestedFnName] = function (id) {
           if (id === undefined) {
             let err = new NoIdSuppliedError()
             throw err
           }
-          if (typeof id === "string") {
-            try{
+          if (typeof id === 'string') {
+            try {
               id = parseInt(id, 10)
-            } catch(e) {
+            } catch (e) {
               throw new NonIntegerIDError()
             }
           }
-          const nested_path = nested.path.replace(":id", id) + endpoint.path
+          const nested_path = nested.path.replace(':id', id) + endpoint.path
           let fnName = _.camelCase(`get ${name}`)
           let fn = {}
           fn[fnName] = (
-            method === "get" ?
-            factory.get(self, nested_path, delinkFn, { no_id }) :
-            factory.list(self, nested_path, entity, filters, delinkFn)
+            method === 'get'
+            ? factory.get(self, nested_path, delinkFn, { no_id })
+            : factory.list(self, nested_path, entity, filters, delinkFn)
           )
           return fn
         }
@@ -378,7 +362,7 @@ const functionise = (self, endpoint) => {
  * @param  {[type]} retries    [description]
  * @return {[type]}            [description]
  */
-const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries = DEFAULT_RETRY_OPTS.retries, delinkify = false }) {
+exports.Cliniko = function ({ api_key, user_agent, retries = DEFAULT_RETRY_OPTS.retries, delinkify = false }) {
   // Set up the object for event callbacks
   this.callbacks = {
     data: null,
@@ -401,8 +385,8 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries = DEFA
   // Our retries limits
   this.retries = retries
   // if an API key or user agent isn't supplied, don't continue. These are mandatory.
-  if(!api_key || api_key === null || typeof api_key !== "string") throw new NoAPIKeyError()
-  if(!user_agent || user_agent === null || typeof user_agent !== "string") {
+  if (!api_key || api_key === null || typeof api_key !== 'string') throw new NoAPIKeyError()
+  if (!user_agent || user_agent === null || typeof user_agent !== 'string') {
     let error = new NoUserAgentError()
     error.example = USER_AGENT_EXAMPLE
     throw error
@@ -412,14 +396,14 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries = DEFA
   /**
    * Request
    */
-  this._request = function({ method, url, body }) {
-    return new Promise(function( resolve, reject ) {
+  this._request = function ({ method, url, body }) {
+    return new Promise(function (resolve, reject) {
       const options = {
         method,
         url,
         auth: {
           username: this.api_key,
-          password: "",
+          password: '',
           sendImmediately: true
         },
         headers: {
@@ -430,7 +414,7 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries = DEFA
         json: body || true
       }
       // Run the HTTP request
-      request(options, function(err, response, json) {
+      request(options, function (err, response, json) {
         // If straight up error, reject
         if (err) return reject(err)
         // Status codes in the 4** range.
@@ -441,19 +425,19 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries = DEFA
           return reject(httpErr)
         }
         // Resolve withe JSON response, or with an empty object
-        return resolve( !json || json === null ? {} : json)
+        return resolve(!json ? null : json)
       })
     }.bind(this))
   }
   /**
    * Request wrapper with Jitter retries
    */
-  this._doRequest = function({ method, url, body }) {
-    return new Promise(function(resolve, reject) {
+  this._doRequest = function ({ method, url, body }) {
+    return new Promise(function (resolve, reject) {
       // Submit with Jitter retry
       jitter(Object.assign({}, DEFAULT_RETRY_OPTS, {
-        retires : this.retries
-      }), function(retry, number) {
+        retires: this.retries
+      }), function (retry) {
         return this._request({ method, url, body })
         .catch(retry)
       }.bind(this))
@@ -463,11 +447,12 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries = DEFA
   /**
    * GET
    */
-  this._get = function({ path, id, delink }) { return new Promise(function(resolve, reject) {
-    const method = "get"
-    const url = CLINIKO_API_BASE + appendId(path, id) + "?"
-    return this._doRequest({ method, url })
-      .then(function(json){
+  this._get = function ({ path, id, delink }) {
+    return new Promise(function (resolve, reject) {
+      const method = 'get'
+      const url = CLINIKO_API_BASE + appendId(path, id) + '?'
+      return this._doRequest({ method, url })
+      .then(function (json) {
         if (this._useOnData()) {
           this.callbacks.data(delink(json, this.delinkify))
           return resolve(null)
@@ -476,35 +461,37 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries = DEFA
         // These will be returned with the promise is resolved.
         return resolve(delink(json, this.delinkify))
       }.bind(this))
-      .catch(function(err) {
+      .catch(function (err) {
         if (this._useOnError()) {
           this.callbacks.error(err)
           return resolve(null)
         }
         return reject(err)
       }.bind(this))
-  }.bind(this))}
+    }.bind(this))
+  }
   /*
    * GET, but searcing
    */
-  this._list = function({ path, entity, search, per_page, page, follow, filters, delink }) { return new Promise(function(resolve, reject) {
-    const method = "get"
-    let qs = [
-      buildPage(page),
-      buildPerPage(per_page),
-      buildSearch(search, filters)
-    ].join("&")
-    let url = CLINIKO_API_BASE + path + ( qs.length ? "?" + qs : "")
+  this._list = function ({ path, entity, search, per_page, page, follow, filters, delink }) {
+    return new Promise(function (resolve, reject) {
+      const method = 'get'
+      let qs = [
+        buildPage(page),
+        buildPerPage(per_page),
+        buildSearch(search, filters)
+      ].join('&')
+      let url = CLINIKO_API_BASE + path + (qs.length ? '?' + qs : '')
     // If this enpoint has an entity name for its search results,
     // then we need to collect results into an array.
     // Otherwise, just return an object
-    let records = []
-    let total_records = 0
-    let pages = 0
-    let fields = []
-    const next = function(url, save_fields) {
-      this._doRequest({ method, url })
-        .then(function(json){
+      let records = []
+      let total_records = 0
+      let pages = 0
+      let fields = []
+      const next = function (url, save_fields) {
+        this._doRequest({ method, url })
+        .then(function (json) {
           // Keep a running total, as this will be emitted in the onDone
           // event.
           total_records += json[entity].length
@@ -553,25 +540,27 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries = DEFA
           // either as a combined array, or the JSON object
           return resolve(records)
         }.bind(this))
-        .catch(function(err) {
+        .catch(function (err) {
           if (this._useOnError()) {
             this.callbacks.error(err)
             return resolve(null)
           }
           return reject(err)
         }.bind(this))
-    }.bind(this)
+      }.bind(this)
     // Start
-    return next(url, RETAIN_FIELDS)
-  }.bind(this))}
+      return next(url, RETAIN_FIELDS)
+    }.bind(this))
+  }
   /**
    * PUT
    */
-  this._update = function({ path, id, body, delink }) { return new Promise(function(resolve, reject) {
-    const method = "put"
-    const url = CLINIKO_API_BASE + appendId(path, id)
-    return this._doRequest({ method, url, body })
-      .then(function(json){
+  this._update = function ({ path, id, body, delink }) {
+    return new Promise(function (resolve, reject) {
+      const method = 'put'
+      const url = CLINIKO_API_BASE + appendId(path, id)
+      return this._doRequest({ method, url, body })
+      .then(function (json) {
         if (this._useOnData()) {
           this.callbacks.data(delink(json, this.delinkify))
           return resolve(null)
@@ -580,38 +569,48 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries = DEFA
         // These will be returned with the promise is resolved.
         return resolve(delink(json, this.delinkify))
       }.bind(this))
-      .catch(function(err) {
+      .catch(function (err) {
         if (this._useOnError()) {
           this.callbacks.error(err)
           return resolve(null)
         }
         return reject(err)
       }.bind(this))
-  }.bind(this))}
+    }.bind(this))
+  }
   /**
    * POST
    */
-  this._create = function({ path, body, delink }) { return new Promise(function(resolve, reject) {
-    const method = "post"
-    const url = CLINIKO_API_BASE + path
-    return this._doRequest({ method, url, body })
-  }.bind(this))}
+  this._create = function ({ path, body }) {
+    return new Promise(function (resolve, reject) {
+      const method = 'post'
+      const url = CLINIKO_API_BASE + path
+      this._doRequest({ method, url, body })
+      .then(resolve)
+      .catch(reject)
+    }.bind(this))
+  }
   /**
    * DELETE
    */
-  this._delete = function({ path, id }) { return new Promise(function(resolve, reject) {
-    const method = "delete"
-    const url = CLINIKO_API_BASE + appendId(path, id)
-    return this._doRequest({ method, url })
-  }.bind(this))}
+  this._delete = function ({ path, id }) {
+    return new Promise(function (resolve, reject) {
+      const method = 'delete'
+      const url = CLINIKO_API_BASE + appendId(path, id)
+      this._doRequest({ method, url })
+      .then(resolve)
+      .catch(reject)
+    }.bind(this))
+  }
   /**
    * ARCHIVE
    */
-  this._archive = function({ path, id, delink }) { return new Promise(function(resolve, reject) {
-    const method = "post"
-    const url = CLINIKO_API_BASE + appendId(path, id) + "/archive"
-    return this._doRequest({ method, url })
-      .then(function(json){
+  this._archive = function ({ path, id, delink }) {
+    return new Promise(function (resolve, reject) {
+      const method = 'post'
+      const url = CLINIKO_API_BASE + appendId(path, id) + '/archive'
+      return this._doRequest({ method, url })
+      .then(function (json) {
         if (this._useOnData()) {
           this.callbacks.data(delink(json, this.delinkify))
           return resolve(null)
@@ -620,22 +619,24 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries = DEFA
         // These will be returned with the promise is resolved.
         return resolve(delink(json, this.delinkify))
       }.bind(this))
-      .catch(function(err) {
+      .catch(function (err) {
         if (this._useOnError()) {
           this.callbacks.error(err)
           return resolve(null)
         }
         return reject(err)
       }.bind(this))
-  }.bind(this))}
+    }.bind(this))
+  }
   /**
    * UNARCHIVE
    */
-  this._unarchive = function({ path, id, delink }) { return new Promise(function(resolve, reject) {
-    const method = "post"
-    const url = CLINIKO_API_BASE + appendId(path, id) + "/unarchive"
-    return this._doRequest({ method, url })
-      .then(function(json){
+  this._unarchive = function ({ path, id, delink }) {
+    return new Promise(function (resolve, reject) {
+      const method = 'post'
+      const url = CLINIKO_API_BASE + appendId(path, id) + '/unarchive'
+      return this._doRequest({ method, url })
+      .then(function (json) {
         if (this._useOnData()) {
           this.callbacks.data(delink(json, this.delinkify))
           return resolve(null)
@@ -644,22 +645,24 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries = DEFA
         // These will be returned with the promise is resolved.
         return resolve(delink(json, this.delinkify))
       }.bind(this))
-      .catch(function(err) {
+      .catch(function (err) {
         if (this._useOnError()) {
           this.callbacks.error(err)
           return resolve(null)
         }
         return reject(err)
       }.bind(this))
-  }.bind(this))}
+    }.bind(this))
+  }
   /**
    * CANCEL
    */
-  this._cancel = function({ path, id, delink }) { return new Promise(function(resolve, reject) {
-    const method = "patch"
-    const url = CLINIKO_API_BASE + appendId(path, id) + "/cancel"
-    return this._doRequest({ method, url })
-      .then(function(json){
+  this._cancel = function ({ path, id, delink }) {
+    return new Promise(function (resolve, reject) {
+      const method = 'patch'
+      const url = CLINIKO_API_BASE + appendId(path, id) + '/cancel'
+      return this._doRequest({ method, url })
+      .then(function (json) {
         if (this._useOnData()) {
           this.callbacks.data(delink(json, this.delinkify))
           return resolve(null)
@@ -668,32 +671,33 @@ const Cliniko = exports.Cliniko = function({ api_key, user_agent, retries = DEFA
         // These will be returned with the promise is resolved.
         return resolve(delink(json, this.delinkify))
       }.bind(this))
-      .catch(function(err) {
+      .catch(function (err) {
         if (this._useOnError()) {
           this.callbacks.error(err)
           return resolve(null)
         }
         return reject(err)
       }.bind(this))
-  }.bind(this))}
-  this._useOnData = function() { return this._hasCallback("data") }
-  this._useOnDone = function() { return this._hasCallback("done") }
-  this._useOnError = function() { return this._hasCallback("error") }
-  this._hasCallback = function(name) { return typeof this.callbacks[name] === "function" }
+    }.bind(this))
+  }
+  this._useOnData = function () { return this._hasCallback('data') }
+  this._useOnDone = function () { return this._hasCallback('done') }
+  this._useOnError = function () { return this._hasCallback('error') }
+  this._hasCallback = function (name) { return typeof this.callbacks[name] === 'function' }
   /**
    * When an event is emited
    * @param  {[type]}   name     [description]
    * @param  {Function} callback [description]
    * @return {[type]}            [description]
    */
-  this.on = function(name, callback) {
+  this.on = function (name, callback) {
     this.callbacks[name] = callback
   }
-  this.summary = function() {
+  this.summary = function () {
     return this.query_summary
   }
   // Add in all of the functions we need
-  const fns = ENDPOINTS.reduce(function(obj, endpoint) {
+  const fns = ENDPOINTS.reduce(function (obj, endpoint) {
     return Object.assign(obj, functionise(this, endpoint))
   }.bind(this), {})
   Object.assign(this, fns)

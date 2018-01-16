@@ -15,7 +15,7 @@ if (program.function) {
     eval(fn)
       .then(console.log)
       .catch(console.error)
-  } catch(e) {
+  } catch (e) {
     console.error(e)
   }
 }

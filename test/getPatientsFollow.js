@@ -5,8 +5,8 @@ const per_page = 1
 const follow = true
 cliniko.getPatients({ per_page, follow })
   .then((results) => {
-    console.log("Patient follow search")
+    console.log('Patient follow search')
     console.log(JSON.stringify(results, null, 2))
-    console.log("Summary")
-    console.log(JSON.stringify(cliniko.summary(), null, 2))    
+    console.log('Summary')
+    console.log(JSON.stringify(cliniko.summary(), null, 2))
   })
