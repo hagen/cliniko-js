@@ -411,7 +411,10 @@ exports.Cliniko = function ({ api_key, user_agent, retries = DEFAULT_RETRY_OPTS.
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
-        json: body || true
+        json: body || true,
+        // Set encoding to null for request, to ensure attachment
+        // data returned as buffer
+        encoding: null
       }
       // Run the HTTP request
       request(options, function (err, response, json) {
