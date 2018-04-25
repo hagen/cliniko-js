@@ -1,6 +1,6 @@
 {
   "name": "cliniko",
-  "version": "0.0.22",
+  "version": "0.0.23",
   "description": "Cliniko API wrapper",
   "main": "index.js",
   "scripts": {
@@ -21,7 +21,7 @@
   "homepage": "https://github.com/hagen/cliniko-js#readme",
   "dependencies": {
     "error-ex": "^1.3.1",
-    "http-parser-js": "^0.4.9",
+    "http-parser-js": "^0.4.12",
     "lodash": "^4.17.4",
     "moment": "^2.19.4",
     "pluralize": "^7.0.0",
