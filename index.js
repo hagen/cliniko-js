@@ -426,6 +426,7 @@ exports.Cliniko = function ({ api_key, user_agent, retries = DEFAULT_RETRY_OPTS.
           // In any case, it's worthwhile throwing the response
           // into the error also to help inspect.
           err.response = response
+          err.options = options
           return reject(err)
         }
         // Status codes in the 4** range.
