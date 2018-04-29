@@ -362,7 +362,7 @@ const functionise = (self, endpoint) => {
  * @param  {[type]} retries    [description]
  * @return {[type]}            [description]
  */
-exports.Cliniko = function ({ api_key, user_agent, retries = DEFAULT_RETRY_OPTS.retries, delinkify = false }) {
+exports.Cliniko = function ({ api_key, user_agent, retries = DEFAULT_RETRY_OPTS.retries, delinkify = false, delink }) {
   // Set up the object for event callbacks
   this.callbacks = {
     data: null,
@@ -381,7 +381,7 @@ exports.Cliniko = function ({ api_key, user_agent, retries = DEFAULT_RETRY_OPTS.
     seconds: 0
   }
   // Convert links to ids?
-  this.delinkify = delinkify
+  this.delinkify = delink == null ? delinkify : delink
   // Our retries limits
   this.retries = retries
   // if an API key or user agent isn't supplied, don't continue. These are mandatory.
