@@ -419,7 +419,15 @@ exports.Cliniko = function ({ api_key, user_agent, retries = DEFAULT_RETRY_OPTS.
       // Run the HTTP request
       request(options, function (err, response, json) {
         // If straight up error, reject
-        if (err) return reject(err)
+        if (err) {
+          // This is often a HPE_INVALID_HEADER_TOKEN
+          // I don't know if this is actually catchable, however, as it's
+          // thrown in the c code of the http-parser.js.
+          // In any case, it's worthwhile throwing the response
+          // into the error also to help inspect.
+          err.response = response
+          return reject(err)
+        }
         // Status codes in the 4** range.
         if (response.statusCode >= 400 && response.statusCode < 500) {
           const httpErr = new HTTPStatusError()
