@@ -87,7 +87,12 @@ const delink = (records, link_fields) => {
   // Formatter interface function
   const format = record => formatter.delink(record)
   // Our scope array for all new records
-  if (_.isArray(records)) { return records.map(format) } else if (_.isObject(records)) { return [records].map(format)[0] } else { return records }
+  if (_.isArray(records)) {
+    return records.map(format)
+  } else if (_.isObject(records)) {
+    return [records].map(format)[0]
+  }
+  return records
 }
 /**
  * Format a query string condition
@@ -139,6 +144,10 @@ const appendId = (uri, id) => {
   if (id) { return [uri, '/', id].join('') }
   return uri
 }
+/**
+ * Generate factory functions  for get, list, etc.
+ * @type {Object}
+ */
 const factory = {
   list: (self, path, entity, filters, delink) => {
     return function () {
@@ -394,7 +403,7 @@ exports.Cliniko = function ({ api_key, user_agent, retries = DEFAULT_RETRY_OPTS.
   this.api_key = api_key.trim()
   this.user_agent = user_agent.trim()
   /**
-   * Request
+   * Request wrapper. Calls module request for all HTTP methods.
    */
   this._request = function ({ method, url, body }) {
     return new Promise(function (resolve, reject) {
@@ -429,8 +438,8 @@ exports.Cliniko = function ({ api_key, user_agent, retries = DEFAULT_RETRY_OPTS.
           err.options = options
           return reject(err)
         }
-        // Status codes in the 4** range.
-        if (response.statusCode >= 400 && response.statusCode < 500) {
+        // Status codes in the 4**+ range.
+        if (response.statusCode >= 400) {
           const httpErr = new HTTPStatusError()
           httpErr.statusCode = response.statusCode
           httpErr.statusMessage = response.statusMessage
@@ -447,9 +456,7 @@ exports.Cliniko = function ({ api_key, user_agent, retries = DEFAULT_RETRY_OPTS.
   this._doRequest = function ({ method, url, body }) {
     return new Promise(function (resolve, reject) {
       // Submit with Jitter retry
-      jitter(Object.assign({}, DEFAULT_RETRY_OPTS, {
-        retires: this.retries
-      }), function (retry) {
+      jitter(Object.assign({ retries: this.retries }, DEFAULT_RETRY_OPTS), function (retry) {
         return this._request({ method, url, body })
         .catch(retry)
       }.bind(this))
