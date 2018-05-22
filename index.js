@@ -500,10 +500,16 @@ exports.Cliniko = function ({ api_key, user_agent, retries = DEFAULT_RETRY_OPTS.
         buildPerPage(per_page),
         buildSearch(search, filters)
       ].join('&')
-      let url = CLINIKO_API_BASE + path + (qs.length ? '?' + qs : '')
-    // If this enpoint has an entity name for its search results,
-    // then we need to collect results into an array.
-    // Otherwise, just return an object
+      let url = CLINIKO_API_BASE + path + (
+        qs.length
+        ? path.includes('deleted')
+          ? '?beta=true&' + qs
+          : '?' + qs
+        : ''
+      )
+      // If this enpoint has an entity name for its search results,
+      // then we need to collect results into an array.
+      // Otherwise, just return an object
       let records = []
       let total_records = 0
       let pages = 0
