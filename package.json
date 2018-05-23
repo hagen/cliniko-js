@@ -1,6 +1,6 @@
 {
   "name": "cliniko",
-  "version": "0.0.30",
+  "version": "0.0.31",
   "description": "Cliniko API wrapper",
   "main": "index.js",
   "scripts": {
